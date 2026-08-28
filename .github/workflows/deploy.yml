@@ -1,0 +1,69 @@
+name: Verify and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: perxona-template-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${PORT:-22}" -H "$HOST" >> ~/.ssh/known_hosts
+      - name: Upload selected branch
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          TARGET: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          tar --exclude=.git --exclude=node_modules --exclude=.next --exclude='.env*' -czf - . \
+            | ssh -i ~/.ssh/deploy_key -p "${PORT:-22}" "${USER:-deploy}@${HOST}" \
+              "mkdir -p '${TARGET:-/srv/perxona-template}' && cd '${TARGET:-/srv/perxona-template}' && tar -xzf -"
+      - name: Install, build, restart, health-check
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          TARGET: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key -p "${PORT:-22}" "${USER:-deploy}@${HOST}" \
+            "cd '${TARGET:-/srv/perxona-template}' && corepack enable && pnpm install --frozen-lockfile && pnpm build && sudo systemctl restart perxona-template.service && sudo systemctl is-active --quiet perxona-template.service && for i in \$(seq 1 20); do curl -fsS http://127.0.0.1:3000/api/health && exit 0 || sleep 2; done; exit 1"
+      - name: External health-check
+        if: ${{ secrets.APP_BASE_URL != '' }}
+        env: { APP_BASE_URL: ${{ secrets.APP_BASE_URL }} }
+        run: curl --fail --retry 5 --retry-delay 2 "${APP_BASE_URL%/}/api/health"

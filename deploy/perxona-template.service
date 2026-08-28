@@ -1,0 +1,20 @@
+[Unit]
+Description=Perxona Hackathon Template
+After=network.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/srv/perxona-template
+EnvironmentFile=/etc/perxona-template/perxona-template.env
+Environment=NODE_ENV=production
+Environment=PATH=/home/deploy/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env pnpm start
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

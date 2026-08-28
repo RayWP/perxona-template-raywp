@@ -1,0 +1,163 @@
+name: CI and Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@latest --activate
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # The generated application should not require runtime-only secrets merely
+      # to compile. Validate those when the relevant server functionality runs.
+      - name: Build
+        run: pnpm build
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Prepare target directory
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          USER="${DEPLOY_USER:-deploy}"
+          TARGET="${DEPLOY_PATH:-/srv/perxona-template}"
+
+          ssh -i ~/.ssh/deploy_key -p "$PORT" "$USER@$DEPLOY_HOST" \
+            "mkdir -p '$TARGET'"
+
+      - name: Upload source
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          USER="${DEPLOY_USER:-deploy}"
+          TARGET="${DEPLOY_PATH:-/srv/perxona-template}"
+
+          # Stream the checked-out source directly to the server.
+          # This works for private repos without giving the server GitHub credentials.
+          tar \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.next' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            -czf - . \
+          | ssh -i ~/.ssh/deploy_key -p "$PORT" "$USER@$DEPLOY_HOST" \
+              "cd '$TARGET' && tar -xzf -"
+
+      - name: Install, build, restart, and health-check
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          USER="${DEPLOY_USER:-deploy}"
+          TARGET="${DEPLOY_PATH:-/srv/perxona-template}"
+
+          ssh -i ~/.ssh/deploy_key -p "$PORT" "$USER@$DEPLOY_HOST" \
+            "DEPLOY_PATH='$TARGET' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd "$DEPLOY_PATH"
+
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm build
+
+          sudo systemctl restart perxona-template.service
+          sudo systemctl is-active perxona-template.service
+
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then
+              echo "Local health check passed."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Local health check failed."
+          journalctl -u perxona-template.service -n 100 --no-pager || true
+          exit 1
+          REMOTE
+
+      - name: External health check
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APP_BASE_URL:-}" ]; then
+            curl --fail --silent --show-error \
+              --retry 5 --retry-delay 2 \
+              "${APP_BASE_URL%/}/api/health"
+          else
+            echo "APP_BASE_URL not configured; skipped external health check."
+          fi

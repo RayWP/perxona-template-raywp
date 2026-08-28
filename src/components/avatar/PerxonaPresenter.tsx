@@ -1,0 +1,28 @@
+"use client";
+
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import type { PresentationTarget, PresenterElement } from "@/lib/perxona/presenter.types";
+
+export type PresenterStatus = "not-configured" | "initializing" | "ready" | "speaking" | "error";
+export type PerxonaPresenterHandle = { initialize(): Promise<void>; present(text: string): Promise<void>; playMotion(id: string): Promise<void>; interrupt(): Promise<void> };
+
+type Props = { presenterUrl: string; target: PresentationTarget | null; onStatus: (status: PresenterStatus, message?: string) => void };
+let scriptPromise: Promise<void> | undefined;
+
+function loadPresenter(url: string) {
+  if (scriptPromise) return scriptPromise;
+  scriptPromise = new Promise((resolve, reject) => { const script = document.createElement("script"); script.type = "module"; script.src = url; script.onload = () => resolve(); script.onerror = () => reject(new Error("Could not load the Perxona Presenter SDK.")); document.head.appendChild(script); });
+  return scriptPromise;
+}
+
+export const PerxonaPresenter = forwardRef<PerxonaPresenterHandle, Props>(function PerxonaPresenter({ presenterUrl, target, onStatus }, ref) {
+  const elementRef = useRef<PresenterElement | null>(null);
+  useEffect(() => { const element = elementRef.current; if (!element) return; const status = (event: Event) => { const detail = (event as CustomEvent<{ status?: string }>).detail; if (detail?.status?.toLowerCase().includes("ready")) onStatus("ready"); }; const rejected = () => onStatus("error", "Perxona rejected the publishable key. Check its allowed domain and scopes."); element.addEventListener("PRESENTER_STATUS", status); element.addEventListener("CONNECT_KEY_REJECTED", rejected); return () => { element.removeEventListener("PRESENTER_STATUS", status); element.removeEventListener("CONNECT_KEY_REJECTED", rejected); }; }, [onStatus]);
+  useImperativeHandle(ref, () => ({
+    async initialize() { if (!target) { onStatus("not-configured", "Choose or configure an avatar and scene first."); return; } onStatus("initializing"); try { await loadPresenter(presenterUrl); const response = await fetch("/api/perxona/connect-key"); const body = await response.json() as { connectKey?: string; error?: string }; if (!response.ok || !body.connectKey) throw new Error(body.error || "Perxona publishable key is unavailable."); const element = elementRef.current; if (!element) throw new Error("Presenter element is not available."); await element.resumeAudioPlayback(); await element.initializeWithConnectKey(body.connectKey, target); onStatus("ready"); } catch (error) { onStatus("error", error instanceof Error ? error.message : "Perxona initialization failed."); } },
+    async present(text) { const element = elementRef.current; if (!element) throw new Error("Presenter is not initialized."); onStatus("speaking"); const result = await element.present(text); if (!result.success) { const message = result.message || result.code || "Perxona could not present this answer."; onStatus("error", message); throw new Error(message); } onStatus("ready"); },
+    async playMotion(id) { const element = elementRef.current; if (!element) throw new Error("Presenter is not initialized."); const result = await element.playMotion(id); if (!result.success) throw new Error(result.message || result.code || "Perxona could not play that motion."); },
+    async interrupt() { await elementRef.current?.interruptPresentation(); },
+  }), [onStatus, presenterUrl, target]);
+  return <sv-presenter ref={elementRef} className="block h-full min-h-56 w-full" aria-label="Perxona avatar presenter" />;
+});

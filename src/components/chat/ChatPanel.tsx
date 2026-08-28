@@ -1,0 +1,12 @@
+"use client";
+
+import { useState } from "react";
+import type { ChatResponse } from "@/features/conversation/conversation.types";
+import { MessageList } from "./MessageList";
+
+type Message = { role: "user" | "assistant"; content: string };
+export function ChatPanel({ onAnswer }: { onAnswer: (answer: string) => void }) {
+  const [messages, setMessages] = useState<Message[]>([]); const [input, setInput] = useState(""); const [loading, setLoading] = useState(false); const [error, setError] = useState(""); const [sources, setSources] = useState<ChatResponse["sources"]>([]);
+  async function send() { const message = input.trim(); if (!message || loading) return; setInput(""); setError(""); setMessages((current) => [...current, { role: "user", content: message }]); setLoading(true); try { const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, history: messages }) }); const body = await response.json() as ChatResponse & { error?: string }; if (!response.ok) throw new Error(body.error || "Chat request failed."); setMessages((current) => [...current, { role: "assistant", content: body.answer }]); setSources(body.sources); onAnswer(body.answer); } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Network error."); } finally { setLoading(false); } }
+  return <section className="flex min-h-[30rem] flex-col rounded-2xl bg-white p-5 shadow-sm"><div className="mb-4"><p className="text-xs uppercase tracking-[0.2em] text-slate-500">Conversation</p><h2 className="text-xl font-semibold">Chat</h2></div><MessageList messages={messages} />{sources.length > 0 && <p className="mt-3 text-xs text-slate-500">Sources: {sources.map((source) => `${source.documentName} (${source.score})`).join(", ")}</p>}{error && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}<div className="mt-4 flex gap-2"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} className="min-h-12 flex-1 resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-mint" maxLength={4000} placeholder="Type a message..." /><button className="rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={loading || !input.trim()} onClick={() => void send()}>{loading ? "Sending..." : "Send"}</button></div></section>;
+}
