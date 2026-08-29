@@ -21,6 +21,7 @@ Important browser behavior:
 - audio playback generally requires a direct user gesture before speech can start
 - initialize the Presenter and wait for Ready before `present()`
 - do not guess motion IDs; query/use motions actually available for the selected avatar
+- a `CONNECT_KEY_REJECTED` error means the publishable key is revoked/expired, its allowed domain does not match the page origin, or a required scope is missing; reissue it with `asset`, `voice`, `tts_token`, and `presentation` as needed
 
 The SDK is in preview. Verify current contracts before making large Perxona changes.
 

@@ -31,6 +31,12 @@ The app allows localhost automatically in development. `CORS_ALLOWED_ORIGINS` is
 
 Also add `https://your-machine.your-tailnet.ts.net` to the publishable Perxona Connect key's allowed-domain list in Perxona Console. This is separate from the app's CORS setting and is required because the Presenter SDK makes browser calls to Perxona using the page's origin.
 
+### Publishable-key rejection
+
+If the avatar reports that Perxona rejected the publishable key, create or reissue the key in **Organization → Integration → Connect API keys** with type **Publishable**. Allow the exact origin shown in the avatar error (for example, `http://localhost:3000`, `http://127.0.0.1:3000`, or your HTTPS Tailscale origin), and grant the Connect scopes shown by the console for `asset`, `voice`, `tts_token`, and `presentation`. The official Presenter contract uses the asset/voice/token scopes during initialization and the presentation scope when `present()` is called.
+
+Put that publishable key in `PERXONA_CONNECT_PUBLISHABLE_KEY` when using the server-backed mode, or in `NEXT_PUBLIC_PERXONA_CONNECT_PUBLISHABLE_KEY` for browser-only mode. Restart `pnpm dev` after changing either value because Next embeds `NEXT_PUBLIC_` variables into browser code at startup. Leave the secret key's allowed-domain list empty; it is used only by the server.
+
 ## Frontend-only avatar test
 
 Yes. The avatar can be tested without the LLM, RAG, or Perxona proxy routes. The Next dev server still serves the frontend, while the Presenter SDK connects directly from the browser using the publishable Connect key. No secret Connect key is needed for this mode.
