@@ -31,6 +31,7 @@ export function AvatarPanel({ onPresenterReady }: { onPresenterReady: (presenter
   const [status, setStatus] = useState<PresenterStatus>("not-configured");
   const [message, setMessage] = useState("");
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [useServerKey, setUseServerKey] = useState(false);
 
   const statusChanged = useCallback((next: PresenterStatus, detail?: string) => { setStatus(next); setMessage(detail || ""); }, []);
   const target: PresentationTarget | null = selectedAvatarId && selectedSceneId
@@ -48,6 +49,7 @@ export function AvatarPanel({ onPresenterReady }: { onPresenterReady: (presenter
         const config = await response.json() as { presenterUrl: string; target: PresentationTarget | null; configured: boolean };
         if (!active) return;
         if (config.configured) {
+          setUseServerKey(true);
           const [avatarItems, sceneItems, voiceItems] = await Promise.all([
             loadCatalog("/api/perxona/avatars"),
             loadCatalog("/api/perxona/scenes"),
@@ -63,6 +65,7 @@ export function AvatarPanel({ onPresenterReady }: { onPresenterReady: (presenter
           setSelectedVoiceId(config.target?.voiceId || voiceItems[0]?.id || "");
           setMessage("Choose an avatar to load its matching motion catalog.");
         } else if (browserPerxonaConfig.configured && browserPerxonaConfig.target) {
+          setUseServerKey(false);
           setPresenterUrl(browserPerxonaConfig.presenterUrl);
           setSelectedAvatarId(browserPerxonaConfig.target.avatarId);
           setSelectedSceneId(browserPerxonaConfig.target.sceneId);
@@ -70,11 +73,13 @@ export function AvatarPanel({ onPresenterReady }: { onPresenterReady: (presenter
           setMessage("Browser-only avatar mode: chat, LLM, and RAG are not required.");
         } else {
           setPresenterUrl(config.presenterUrl);
+          setUseServerKey(false);
           setMessage("Set Perxona keys to enable the avatar.");
         }
       } catch (error) {
         if (!active) return;
         if (browserPerxonaConfig.configured && browserPerxonaConfig.target) {
+          setUseServerKey(false);
           setPresenterUrl(browserPerxonaConfig.presenterUrl);
           setSelectedAvatarId(browserPerxonaConfig.target.avatarId);
           setSelectedSceneId(browserPerxonaConfig.target.sceneId);
@@ -116,7 +121,7 @@ export function AvatarPanel({ onPresenterReady }: { onPresenterReady: (presenter
 
   return <section className="rounded-2xl bg-ink p-5 text-white shadow-sm">
     <div className="mb-4 flex items-center justify-between"><div><p className="text-xs uppercase tracking-[0.2em] text-slate-300">Perxona avatar</p><h2 className="text-xl font-semibold">Presenter</h2></div><span className={`rounded-full px-3 py-1 text-xs ${status === "error" ? "bg-red-400/20 text-red-200" : "bg-white/10 text-slate-200"}`}>{labels[status]}</span></div>
-    <div className="mb-4 flex min-h-56 items-center justify-center rounded-xl bg-slate-900/70"><PerxonaPresenter key={targetKey} ref={presenterRef} presenterUrl={presenterUrl} target={target} onStatus={statusChanged} /></div>
+    <div className="mb-4 flex min-h-56 items-center justify-center rounded-xl bg-slate-900/70"><PerxonaPresenter key={targetKey} ref={presenterRef} presenterUrl={presenterUrl} target={target} useServerKey={useServerKey} onStatus={statusChanged} /></div>
     {message && <p className="mb-3 text-sm text-slate-300">{message}</p>}
     <div className="mb-3 grid gap-2 sm:grid-cols-3">
       <label className="text-xs text-slate-300">Avatar<select className="mt-1 w-full rounded-lg border-0 bg-white/10 px-3 py-2 text-sm text-white disabled:opacity-50" value={selectedAvatarId} disabled={catalogLoading || !avatars.length} onChange={(event) => selectionChanged("avatar", event.target.value)}><option value="" className="text-ink">{catalogLoading ? "Loading..." : "Configured avatar"}</option>{avatars.map((item) => <option className="text-ink" key={item.id} value={item.id}>{item.name || item.id}</option>)}</select></label>
