@@ -3,6 +3,7 @@ import { z } from "zod";
 const optionalUrl = z.string().url().optional().or(z.literal(""));
 
 export const serverEnvSchema = z.object({
+  CORS_ALLOWED_ORIGINS: z.string().optional().or(z.literal("")),
   PERXONA_API_BASE_URL: optionalUrl,
   PERXONA_CONNECT_SECRET_KEY: z.string().optional().or(z.literal("")),
   PERXONA_CONNECT_PUBLISHABLE_KEY: z.string().optional().or(z.literal("")),
