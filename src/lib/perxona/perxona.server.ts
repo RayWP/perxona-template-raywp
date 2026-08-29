@@ -8,6 +8,23 @@ function requirePerxona() {
   return { baseUrl: env.PERXONA_API_BASE_URL.replace(/\/$/, ""), key: env.PERXONA_CONNECT_SECRET_KEY };
 }
 
+function defaultPresenterUrl(apiBaseUrl: string | undefined) {
+  const region = apiBaseUrl?.match(/\/(asia|eu)(?:\/|$)/)?.[1];
+  return region
+    ? `https://cdn.perxona.ai/${region}/prod/latest/widget/entry/presenter.js`
+    : "https://cdn.perxona.ai/prod/latest/widget/entry/presenter.js";
+}
+
+function presenterUrl(apiBaseUrl: string | undefined, configuredUrl: string | undefined) {
+  const region = apiBaseUrl?.match(/\/(asia|eu)(?:\/|$)/)?.[1];
+  const neutralDefault = "https://cdn.perxona.ai/prod/latest/widget/entry/presenter.js";
+  // Older copies of .env.example explicitly stored the neutral URL. Treat it
+  // like the new blank value when the API is regional, so existing checkouts
+  // automatically move to the matching Presenter engine.
+  if (configuredUrl && !(region && configuredUrl === neutralDefault)) return configuredUrl;
+  return defaultPresenterUrl(apiBaseUrl);
+}
+
 async function perxonaJson(path: string): Promise<unknown> {
   const config = requirePerxona();
   const response = await fetch(`${config.baseUrl}${path}`, { headers: { "X-Connect-Key": config.key, Accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
@@ -24,7 +41,7 @@ function normalizeCatalog(value: unknown, idField: string): PerxonaCatalog {
 export function publicPerxonaConfig() {
   const env = getServerEnv();
   const target = env.PERXONA_AVATAR_ID && env.PERXONA_SCENE_ID ? { avatarId: env.PERXONA_AVATAR_ID, sceneId: env.PERXONA_SCENE_ID, ...(env.PERXONA_VOICE_ID ? { voiceId: env.PERXONA_VOICE_ID } : {}) } : null;
-  return { presenterUrl: env.PERXONA_PRESENTER_URL || "https://cdn.perxona.ai/prod/latest/widget/entry/presenter.js", target, configured: Boolean(env.PERXONA_CONNECT_SECRET_KEY && env.PERXONA_CONNECT_PUBLISHABLE_KEY) };
+  return { presenterUrl: presenterUrl(env.PERXONA_API_BASE_URL, env.PERXONA_PRESENTER_URL), target, configured: Boolean(env.PERXONA_CONNECT_SECRET_KEY && env.PERXONA_CONNECT_PUBLISHABLE_KEY) };
 }
 
 export function publishableConnectKey() {

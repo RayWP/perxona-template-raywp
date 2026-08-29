@@ -22,6 +22,7 @@ Important browser behavior:
 - initialize the Presenter and wait for Ready before `present()`
 - do not guess motion IDs; query/use motions actually available for the selected avatar
 - a `CONNECT_KEY_REJECTED` error means the publishable key is revoked/expired, its allowed domain does not match the page origin, or a required scope is missing; reissue it with `asset`, `voice`, `tts_token`, and `presentation` as needed
+- keep the Presenter CDN region aligned with `PERXONA_API_BASE_URL`; the server derives `/asia` or `/eu` automatically unless `PERXONA_PRESENTER_URL` overrides it
 
 The SDK is in preview. Verify current contracts before making large Perxona changes.
 
@@ -71,3 +72,5 @@ Expected runtime:
 - app path `/srv/perxona-template`
 
 Runtime secrets should live outside Git.
+
+For Next development through Tailscale, set `CORS_ALLOWED_ORIGINS` to the full HTTPS origin. `next.config.ts` converts it to the hostname form required by Next 16's `allowedDevOrigins`.

@@ -27,9 +27,11 @@ Set the exact origin in `.env.local` and restart Next after changing it:
 CORS_ALLOWED_ORIGINS=https://your-machine.your-tailnet.ts.net
 ```
 
-The app allows localhost automatically in development. `CORS_ALLOWED_ORIGINS` is an exact-origin allowlist for `/api` requests; do not use `*`. If the frontend is opened directly at the Tailscale URL, its same-origin API requests do not require CORS, but the allowlist is useful when the frontend and API origins differ.
+The app allows localhost automatically in development. `CORS_ALLOWED_ORIGINS` is an exact-origin allowlist for `/api` requests; do not use `*`. Next also derives its development-server `allowedDevOrigins` host allowlist from this variable, because Next expects a hostname while the CORS setting uses a full origin. If the frontend is opened directly at the Tailscale URL, its same-origin API requests do not require CORS, but the allowlist is useful when the frontend and API origins differ.
 
 Also add `https://your-machine.your-tailnet.ts.net` to the publishable Perxona Connect key's allowed-domain list in Perxona Console. This is separate from the app's CORS setting and is required because the Presenter SDK makes browser calls to Perxona using the page's origin.
+
+The Presenter CDN URL is derived from `PERXONA_API_BASE_URL`: `/asia` uses `https://cdn.perxona.ai/asia/prod/latest/widget/entry/presenter.js` and `/eu` uses the corresponding `/eu/` URL. Set `PERXONA_PRESENTER_URL` only when Perxona gives you a different explicit Presenter URL.
 
 ### Publishable-key rejection
 
